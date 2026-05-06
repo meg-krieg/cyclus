@@ -78,9 +78,16 @@ class Trader {
   virtual void AcceptProductTrades(
       const std::vector<std::pair<Trade<Product>, Product::Ptr>>& responses) {}
 
+  virtual void EventRequest(){} // can be overridden ? 
+  
+  bool Traded; //follows DRE to assess whether trader completed trades
+
+  void SetTraded(bool status){Traded = status;} //setter for Traded
+
+  bool ReturnTraded(){return Traded;} //getter for Traded 
+
  protected:
   Agent* manager_;
-
  private:
   /// @warning this function is hidden to prevent an invalid signature that can
   /// raise difficult to find bugs

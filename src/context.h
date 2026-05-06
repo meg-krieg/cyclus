@@ -183,6 +183,18 @@ class Context {
   /// @return the current set of traders registered for resource exchange.
   inline const std::set<Trader*>& traders() const { return traders_; }
 
+  inline void RegisterRequesters(int time, Trader* e) {request_queue_[time].insert(e); } //conditions to register an event is up to archetype dev
+
+  inline void EventComplete(int t) {request_queue_.erase(t);} // fit this so it purges any 0 entries as well as the most current completed event ! 
+
+  inline const std::map<int, std::set<Trader*>>& EventRequesters() const { return request_queue_; }
+
+  inline void Populate(int t) {if (pop_sched_.count(t)>0){request_queue_.at(t) = traders();};}  //there are more use cases for this 
+
+  inline void SchedPopulate(int next_event) {pop_sched_.insert(next_event); request_queue_[next_event];} // there are more use cases for this
+
+  inline void DeregisterRequesters(int time, Trader* e) {request_queue_[time].erase(e);} //conditions to deregister an event is up to archetype dev
+
   /// Create a new agent by cloning the named prototype. The returned agent is
   /// not initialized as a simulation participant.
   ///
@@ -364,16 +376,16 @@ class Context {
   /// contains archetype specs of all agents for which version have already
   /// been recorded in the db
   std::set<std::string> rec_ver_;
-
   std::map<std::string, Agent*> protos_;
   std::map<std::string, Composition::Ptr> recipes_;
   std::map<std::string, Package::Ptr> packages_;
   std::map<std::string, TransportUnit::Ptr> transport_units_;
   std::set<Agent*> agent_list_;
   std::set<Trader*> traders_;
+  std::map<int, std::set<Trader*>> request_queue_;
   std::map<std::string, int> n_prototypes_;
   std::map<std::string, int> n_specs_;
-
+  std::set<int> pop_sched_;
   SimInfo si_;
   Timer* ti_;
   ExchangeSolver* solver_;

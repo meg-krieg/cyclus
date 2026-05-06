@@ -29,14 +29,18 @@ void Timer::RunSim() {
 
   ExchangeManager<Material> matl_manager(ctx_);
   ExchangeManager<Product> genrsrc_manager(ctx_);
+
+  //the following 3 lines are to add an upper limit to the 3 event maps so that the there is always a final event in "queue"
+  ctx_->SchedPopulate(dur()+1); 
+  build_queue_[dur()+1]; // find a better home 
+  decom_queue_[dur()+1]; // find a better home 
+
   while (time_ < si_.duration) {
     CLOG(LEV_INFO1) << "Current time: " << time_;
-
     if (want_snapshot_) {
       want_snapshot_ = false;
       SimInit::Snapshot(ctx_);
     }
-
     // run through phases
     DoBuild();
     CLOG(LEV_INFO2) << "Beginning Tick for time: " << time_;
@@ -52,9 +56,8 @@ void Timer::RunSim() {
 #ifdef CYCLUS_WITH_PYTHON
     EventLoop();
 #endif
-
-    time_++;
-
+    time_ = NextEvent();
+    
     if (want_kill_) {
       break;
     }
@@ -76,6 +79,7 @@ void Timer::RunSim() {
 void Timer::DoBuild() {
   // build queued agents
   std::vector<std::pair<std::string, Agent*>> build_list = build_queue_[time_];
+  //if build_list is empty at time, already no one builds i.e. "skips" event 
   for (int i = 0; i < build_list.size(); ++i) {
     Agent* m = ctx_->CreateAgent<Agent>(build_list[i].first);
     Agent* parent = build_list[i].second;
@@ -96,6 +100,7 @@ void Timer::DoTick() {
   }
 
 #pragma omp parallel for
+  //everyone ticks for all events (Cyclus 04/21 notes)
   for (size_t i = 0; i < cpp_tickers_.size(); ++i) {
     cpp_tickers_[i]->Tick();
   }
@@ -103,11 +108,16 @@ void Timer::DoTick() {
 
 void Timer::DoResEx(ExchangeManager<Material>* matmgr,
                     ExchangeManager<Product>* genmgr) {
-  matmgr->Execute();
-  genmgr->Execute();
+  auto reg_traders = ctx_->EventRequesters();  
+  //still unclear: do decom events require secondary registration for trades? 
+  if(reg_traders.at(time_).size()>0){
+      matmgr->Execute();
+      genmgr->Execute();
+    }
 }
 
 void Timer::DoTock() {
+  //everyone tocks for all events (Cyclus 04/21 notes)
   for (TimeListener* agent : py_tickers_) {
     agent->Tock();
   }
@@ -126,6 +136,17 @@ void Timer::DoTock() {
       if (a->enter_time() != -1) {
         RecordInventories(a);
       }
+    }
+  }
+  auto reg_traders = ctx_->EventRequesters();
+  if(reg_traders.at(time_).size()>0){
+    ctx_->EventComplete(time_); //to dereference some pointers, maybe applied to build/decom maps too
+
+    if(reg_traders.count(reg_traders.lower_bound(time_ +1)->first) == 0){ 
+      //if archetype developer has some ctx_->DeregisterRequester behavior
+      //this looks for instances that previously registered -upcoming- events 
+      //have been emptied of requesters
+      ctx_->EventComplete(reg_traders.lower_bound(time_ + 1)->first);
     }
   }
 }
@@ -190,6 +211,7 @@ void Timer::RecordInventory(Agent* a, std::string name, Material::Ptr m) {
 void Timer::DoDecom() {
   // decommission queued agents
   std::vector<Agent*> decom_list = decom_queue_[time_];
+  //if decom_list is empty at time, already no one decommissions i.e. "skips" event 
   for (int i = 0; i < decom_list.size(); ++i) {
     Agent* m = decom_list[i];
     if (m->parent() != NULL) {
@@ -218,6 +240,14 @@ void Timer::UnregisterTimeListener(TimeListener* tl) {
         std::remove(cpp_tickers_.begin(), cpp_tickers_.end(), tl),
         cpp_tickers_.end());
   }
+}
+
+int Timer::NextEvent(){
+  auto reg_traders = ctx_->EventRequesters();
+  int t_p = time_ +1;  
+  std::vector<int> event_lists = {decom_queue_.lower_bound(t_p)->first,build_queue_.lower_bound(t_p)->first,
+                                  reg_traders.lower_bound(t_p)->first};
+  return *std::min_element(event_lists.begin(), event_lists.end());
 }
 
 void Timer::SchedBuild(Agent* parent, std::string proto_name, int t) {
@@ -276,7 +306,6 @@ void Timer::Initialize(Context* ctx, SimInfo si) {
   if (si.m0 < 1 || si.m0 > 12) {
     throw ValueError("Invalid month0; must be between 1 and 12 (inclusive).");
   }
-
   want_kill_ = false;
   ctx_ = ctx;
   time_ = 0;
