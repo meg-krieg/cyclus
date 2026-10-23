@@ -30,6 +30,8 @@ const uint64_t cyclusMonth = cyclusYear / kMonthsPerYear;
 
 const uint64_t kDefaultTimeStepDur = cyclusMonth;
 
+const double kDefaultDecayEps = 1e-4;
+
 const uint64_t kDefaultSeed = 20160212;
 
 const uint64_t kDefaultStride = 10000;
@@ -89,6 +91,9 @@ class SimInfo {
   /// "manual" if use of the decay function is allowed, "never" otherwise
   std::string decay;
 
+  /// Fractional decay threshold in [0, 1). Smaller changes may be discarded.
+  double decay_eps;
+
   /// length of the simulation in timesteps (months)
   int duration;
 
@@ -135,6 +140,10 @@ class SimInfo {
   /// some parameter, such as the agent_id.
   uint64_t stride;
 };
+
+/// Folds a time in milliseconds into a seed in [1, INT_MAX], which is valid as
+/// the input file's seed.
+int MillisecondsToSeed(int64_t ms);
 
 /// A simulation context provides access to necessary simulation-global
 /// functions and state. All code that writes to the output database, needs to
@@ -186,6 +195,39 @@ class Context {
 
   /// @return the current set of traders registered for resource exchange.
   inline const std::set<Trader*>& traders() const { return traders_; }
+
+  inline const std::map<int,Trader*>& IdTrader() const {return traderids_;}
+
+  inline void SetTraderIds(int id, Trader* e) {traderids_[id] = e;}
+
+  ////////////////////////////////////////////////////////// discrete cyclus functions ///////////////////
+
+  inline void RegisterCommodityConsumer(std::string in_commod, Trader* e){commodity_consumers_[in_commod].insert(e);}
+
+  void UnregisterCommodityConsumer(std::set<std::string> in_commods, Trader* e);
+
+  inline const std::map<std::string, std::set<Trader*>>& consumers() const {return commodity_consumers_;}
+
+
+  
+  void RegisterCommoditiesTraded(int t, std::set<std::string> trade_commods);
+
+  inline std::set<std::string>& CommoditiesTraded(int t) {return commodities_traded_.at(t);}
+
+  inline void RegisterRequesters(int time, Trader* e) {request_queue_[time].insert(e);
+  } //conditions to register an event is up to archetype dev
+
+  inline void EventComplete(int t) {request_queue_.erase(t);} // fit this so it purges any 0 entries as well as the most current completed event ! 
+  inline std::set<Trader*> EventRequesters(int t) {return request_queue_[t];}
+  // inline const std::set<Trader*>& EventRequesters(int t) const {return request_queue_[t];}
+    
+    // return request_queue_.at(t); }
+  
+  inline const std::map<int,std::set<Trader*>>& EventTimeline() const { return request_queue_; }
+
+  inline void SchedPopulate(int next_event) {pop_sched_.insert(next_event); request_queue_[next_event];} // there are more use cases for this
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   /// Create a new agent by cloning the named prototype. The returned agent is
   /// not initialized as a simulation participant.
@@ -374,16 +416,21 @@ class Context {
   /// contains archetype specs of all agents for which version have already
   /// been recorded in the db
   std::set<std::string> rec_ver_;
-
   std::map<std::string, Agent*> protos_;
   std::map<std::string, Composition::Ptr> recipes_;
   std::map<std::string, Package::Ptr> packages_;
   std::map<std::string, TransportUnit::Ptr> transport_units_;
   std::set<Agent*> agent_list_;
+
   std::set<Trader*> traders_;
+  std::map<int, std::set<Trader*>> request_queue_;
+  std::map<std::string, std::set<Trader*>> commodity_consumers_;
+  std::map<int,std::set<std::string>> commodities_traded_;
+  std::set<int> pop_sched_;
+  std::map<int,Trader*> traderids_;
+
   std::map<std::string, int> n_prototypes_;
   std::map<std::string, int> n_specs_;
-
   SimInfo si_;
   Timer* ti_;
   ExchangeSolver* solver_;

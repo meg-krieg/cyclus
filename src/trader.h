@@ -49,11 +49,13 @@ class Trader {
     return std::set<BidPortfolio<Product>::Ptr>();
   }
 
-  /// default implementation for material preferences.
-  virtual void AdjustMatlPrefs(PrefMap<Material>::type& prefs) {}
+  /// default implementation for adjusting costs of materials.
+  /// @param rb_map map for adjusting unit costs (from bids)
+  virtual void AdjustMatlParams(RequestBidMap<Material>::type& rb_map) {}
 
-  /// default implementation for material preferences.
-  virtual void AdjustProductPrefs(PrefMap<Product>::type& prefs) {}
+  /// default implementation for adusting costs of products.
+  /// @param rb_map map for adjusting unit costs (from bids)
+  virtual void AdjustProductParams(RequestBidMap<Product>::type& rb_map) {}
 
   /// @brief default implementation for responding to material trades
   /// @param trades all trades in which this trader is the supplier
@@ -78,12 +80,26 @@ class Trader {
   virtual void AcceptProductTrades(
       const std::vector<std::pair<Trade<Product>, Product::Ptr>>& responses) {}
 
- protected:
+  virtual void EventRequest(){} // can be overridden ? 
+
+  void FillInCommods(std::string commod){in_commods_.insert(commod);}
+
+  std::set<std::string> GetInCommods() {return in_commods_;}
+
+  bool Participated; //assess whether the agent has traded or decommissioend
+
+  void SetParticipated(bool status){Participated = status;} //setter for Participated
+
+  bool ReturnParticipated(){return Participated;} //getter for Participated
+
+  protected:
   Agent* manager_;
 
  private:
   /// @warning this function is hidden to prevent an invalid signature that can
   /// raise difficult to find bugs
+  std::set<std::string> in_commods_;
+  
   virtual std::set<BidPortfolio<Material>::Ptr> GetMatlBids(
       const CommodMap<Material>::type& commod_requests) {
     return std::set<BidPortfolio<Material>::Ptr>();

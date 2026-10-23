@@ -25,6 +25,10 @@ class Timer {
   friend class ::SimInitTest;
 
  public:
+  Timer() = default;
+  ~Timer() = default;
+  Timer(const Timer& other);
+  Timer& operator=(const Timer& other);
 
   /// Sets intial time-related parameters for the simulation.
   ///
@@ -50,6 +54,8 @@ class Timer {
   /// Removes an agent from receiving tick/tock notifications.
   /// Agents should unregister from their Decommission method.
   void UnregisterTimeListener(TimeListener* tl);
+
+  int NextEvent();
 
   /// Schedules the named prototype to be built for the specified parent at
   /// timestep t.

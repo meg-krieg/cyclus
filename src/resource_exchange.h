@@ -16,21 +16,21 @@
 
 namespace cyclus {
 
-/// @brief Preference adjustment method helpers to convert from templates to the
-/// Agent inheritance hierarchy
+/// @brief Adjustment method helpers to convert from templates
+/// to the Agent inheritance hierarchy
 template <class T>
-inline static void AdjustPrefs(Agent* m, typename PrefMap<T>::type& prefs) {}
-inline static void AdjustPrefs(Agent* m, PrefMap<Material>::type& prefs) {
-  m->AdjustMatlPrefs(prefs);
+inline static void Adjust(Agent* m, typename RequestBidMap<T>::type& rb_map) {}
+inline static void Adjust(Agent* m, RequestBidMap<Material>::type& rb_map) {
+  m->AdjustMatlParams(rb_map);
 }
-inline static void AdjustPrefs(Agent* m, PrefMap<Product>::type& prefs) {
-  m->AdjustProductPrefs(prefs);
+inline static void Adjust(Agent* m, RequestBidMap<Product>::type& rb_map) {
+  m->AdjustProductParams(rb_map);
 }
-inline static void AdjustPrefs(Trader* t, PrefMap<Material>::type& prefs) {
-  t->AdjustMatlPrefs(prefs);
+inline static void Adjust(Trader* t, RequestBidMap<Material>::type& rb_map) {
+  t->AdjustMatlParams(rb_map);
 }
-inline static void AdjustPrefs(Trader* t, PrefMap<Product>::type& prefs) {
-  t->AdjustProductPrefs(prefs);
+inline static void Adjust(Trader* t, RequestBidMap<Product>::type& rb_map) {
+  t->AdjustProductParams(rb_map);
 }
 
 /// @class ResourceExchange
@@ -44,9 +44,9 @@ inline static void AdjustPrefs(Trader* t, PrefMap<Product>::type& prefs) {
 /// -# Response to Request for Bids
 ///     Agents that supply resources of a given type respond to\n
 ///     those requests
-/// -# Preference Adjustment
-///     Preferences for each request-bid pair are set, informing\n
-///     the evenutal soluation mechanism
+/// -# Adjustment
+///     Costs and Values for each request-bid pair are set, informing\n
+///     the eventual solution mechanism
 ///
 /// For example, assuming a simulation Context, ctx, and resource type,
 /// ResourceType:
@@ -67,10 +67,10 @@ template <class T> class ResourceExchange {
   inline ExchangeContext<T>& ex_ctx() { return ex_ctx_; }
 
   /// @brief queries traders and collects all requests for bids
-  void AddAllRequests() {
-    InitTraders();
-    std::for_each(traders_.begin(),
-                  traders_.end(),
+  void AddAllRequests() {  
+    InitRequesters();
+    std::for_each(requesters_.begin(),
+                  requesters_.end(),
                   std::bind(&cyclus::ResourceExchange<T>::AddRequests_,
                             this,
                             std::placeholders::_1));
@@ -86,13 +86,13 @@ template <class T> class ResourceExchange {
                             std::placeholders::_1));
   }
 
-  /// @brief adjust preferences for requests given bid responses
+  /// @brief adjust costs and values for requests given bid responses
   void AdjustAll() {
     InitTraders();
     std::set<Trader*> traders = ex_ctx_.requesters;
     std::for_each(traders.begin(),
                   traders.end(),
-                  std::bind(&cyclus::ResourceExchange<T>::AdjustPrefs_,
+                  std::bind(&cyclus::ResourceExchange<T>::Adjust_,
                             this,
                             std::placeholders::_1));
   }
@@ -108,8 +108,29 @@ template <class T> class ResourceExchange {
       std::set<Trader*>::iterator it;
       for (it = orig.begin(); it != orig.end(); ++it) {
         traders_.insert(*it);
+        // (*it)->SetParticipated(true); // did I mean for this to go here??? 
+        // //maybe only completed traders should be there 
       }
     }
+  }
+
+  void InitRequesters() {
+    auto orig = InitRequestersAdjacent(); //we do not need the whole ass map tbh. 
+    std::set<Trader*>::iterator it;
+    for (it = orig.begin(); it != orig.end(); ++it) {
+      requesters_.insert(*it);
+    } 
+  }
+  
+  std::set<Trader*> InitRequestersAdjacent() { 
+    std::set<Trader*> traders;
+    auto commod_map = sim_ctx_->consumers(); 
+    auto map2 = sim_ctx_->CommoditiesTraded(sim_ctx_->time());
+    for (std::string commods : map2){
+      traders.merge(commod_map[commods]);
+    }
+    std::cout << "size of trader: " << traders.size() << "\n" << std::endl;
+    return traders;
   }
 
   /// @brief queries a given facility agent for
@@ -131,14 +152,14 @@ template <class T> class ResourceExchange {
     }
   }
 
-  /// @brief allows a trader and its parents to adjust any preferences in the
-  /// system
-  void AdjustPrefs_(Trader* t) {
-    typename PrefMap<T>::type& prefs = ex_ctx_.trader_prefs[t];
-    AdjustPrefs(t, prefs);
+  void Adjust_(Trader* t) {
+    typename RequestBidMap<T>::type& map = ex_ctx_.trader_arc_costs[t];
+
+    Adjust(t, map);
+
     Agent* m = t->manager()->parent();
     while (m != NULL) {
-      AdjustPrefs(m, prefs);
+      Adjust(m, map);
       m = m->parent();
     }
   }
@@ -160,7 +181,7 @@ template <class T> class ResourceExchange {
   // determinism of Cyclus overall.  This allows all traders' resource
   // exchange functions are called in a much closer to deterministic order.
   std::set<Trader*, trader_compare> traders_;
-
+  std::set<Trader*,trader_compare> requesters_; 
   Context* sim_ctx_;
   ExchangeContext<T> ex_ctx_;
 };
